@@ -1,8 +1,74 @@
+// {{{ CSS
+var width = 150,  height = 150;
+
+function dict_format(){
+    var formatted_str = arguments[0] || '';
+    var dict = arguments[1];
+    for(var key in dict){
+        var re = new RegExp("\\{"+key+"}", "gim");
+        formatted_str = formatted_str.replace(re, dict[key]);
+    }
+    return formatted_str;
+}
+
+
 jQuery.fn.exists = function(){ 
     return this.length > 0; 
 };
 
-/* {{{ Jquery XPath Plugin
+var CSS = dict_format(""
+    + 'div.note_{identifier} div, div.note_{identifier} span, div.note_{identifier} img{ margin:0; padding:0; border:0; outline:0; vertical-align:baseline; background:transparent; }'
+    + 'div.note_{identifier} a { margin:0; padding:0; font-size:100%; vertical-align:baseline; background:transparent; }'
+
+    + 'div.note_{identifier} {\n'
+    +   'position: absolute !important;\n'
+    +   'display: inline-block !important;\n'
+    +   'height: auto !important;\n'
+    +   'overflow: hidden !important;\n'
+    +   'font-family: Arial !important;\n'
+    +   'font-size: 10px !important;\n'
+    +   'color: white !important;\n'
+    +   'background-color: rgba(255,166,0, 1) !important;'
+    +   'box-shadow: 0 0 10px #565656 !important;\n'
+    +   'border-radius: 4px !important;\n'
+    +   'text-align: left !important;'
+    +   'float: none !important;\n'
+    + '}\n'
+
+    + 'div.note_{identifier} span {\n'
+    +   'cursor: pointer !important;\n'
+    +   'position: absolute !important;\n'
+    +   'right: 5px !important;\n'
+    +   'font-size: 14px !important;\n'
+    +   'float: none !important;\n'
+    + '}\n'
+
+    + 'div.note_{identifier} .note_header {\n'
+    +   'position: relative !important;\n'
+    +   'color: black !important;\n'
+    +   'padding: 2px !important;\n'
+    +   'float: none !important;\n'
+    + '}'
+
+    + 'div.note_editable {\n'
+    +   'border-bottom-left-radius: 4px !important;\n'
+    +   'border-bottom-right-radius: 4px !important;\n'
+    +   'padding: 4px !important;\n'
+    +   'overflow: hidden !important;\n'
+    +   'width: {width}px !important;' 
+    +   'min-height: {height}px !important;\n'
+    +   'height: auto !important;\n'
+    +   'color: black !important;\n'
+    +   'font-size: 14px !important;\n'
+    +   'background-color: rgba(255,224,0, 1) !important;\n'
+    +   'text-align: left !important;'
+    +   'float: none !important;\n'
+    + '}',
+    {width: width, height: height}
+);
+
+// }}}
+/* {{{ Jquery  Plugins
  * XPath - jQuery wrapper for the DOM 3 XPath API exposed by document.evaluate()
  *
  * Copyright © 2010 John Firebaugh
@@ -41,67 +107,147 @@ jQuery.fn.exists = function(){
 		return this.pushStack(nodes, "xpath", xpath);
 	}
 })(jQuery);
+
 // }}}
 
-var NotesMaster = new function() {
+var NoteMaster = new function() {
     var self = this;
+
+    self.placeholdertext = "Click to edit";
     self.notes = [];
     self.identifier = (new Date()).valueOf();
-    self.targetPosition = null;
-    self.targetXpath = null;
-    self.targetRelativePosition = null;
-    self.layout = $("<div id='noteEditorLayout_" + self.identifier + "'></div>");
-    self.layout.click(function(){return self.closeEditor()});
+    self.maxZ = null;
 
-    self.noteEditor = $(
-        "<div id='noteEditor_" + self.identifier + "' style='background-color: transparent;'>"
-        + "<textarea style='width: 100%; height: 100%; padding: 4px; border-radius: 4px;'></textarea>"
-        + "<div style='float: right; background-color: white;'><button>Save</button></div>"
-        + "</div>"
+    self.putNote = function(note){
+        var date = new Date(note.epoch);
+        var wtop = $(window).scrollTop(),
+            wleft = $(window).scrollLeft()
+            w_height = $(window).height(),
+            w_width = $(window).width();
+            
+
+        var node = $(dict_format("<div class='note_{identifier}'  id='note_{epoch}'>"
+            +   "<div class='note_header'>"
+            +       "{date}"
+            +       "<span title='Delete note'>×</span>"
+            +   "</div>"
+            +   "<div contenteditable='true' class='note_editable' placeholder='" + self.placeholdertext + "'>{content}</div>"
+            + "</div>", 
+                {identifier: self.identifier, 
+                epoch: note.epoch, 
+                date: dict_format("{day} / {month} / {year}", {day: date.getDay(), month: date.getMonth(), year: date.getFullYear()}),
+                content: note.content 
+                }
+            ))
+            .css({
+                top: (note.position? note.position.top: (Math.random() * 1000) % (w_height - height)  + wtop),
+                left: (note.position? note.position.left:(Math.random() * 1000) % (w_width - width) + wleft),
+                position: "absolute"
+            })
+            .draggable({
+                handle: "div.note_header",
+                cancel: "div.note_editable",
+                start: function(event, ui){
+                    $(dict_format(dict_format(".note_{identifier}", {identifier: self.identifier})))
+                        .css("zIndex", self.maxZ);
+                    $(event.target).css("zIndex", self.maxZ + 1);
+                },
+                stop: function(event, ui) {
+                    var item = this;
+                    // elementfrompoint sadece en üstteki elemanı alıyor 
+                    // bu yüzden bir git, gel yapıyoruz
+
+                    chrome.extension.sendRequest(
+                        {
+                            command: "updateNotePosition",
+                            epoch: $(item).attr("id").replace(/note_/,""),
+                            position: ui.offset
+                        },
+                        function(response){
+                            if(response.status != "success"){
+                                alert(response.message);
+                            }
+                        }
+                    );
+                }
+            });
+        node.find(".note_editable").keyup(
+            function(event){
+                var id = $(this).parents("div").attr("id").replace(/note_/,"");
+                chrome.extension.sendRequest(
+                    {
+                        command: "updateNoteContent",
+                        epoch: id,
+                        content: $(this).text().replace(/\n/, "<br>")
+                    },
+                    function(response){
+                        if(response.status != "success"){
+                            alert(response.message);
+                        }
+                    }
+                );
+            }
         );
-    self.noteEditor.find("button").click(function(){ return self.saveNote()})
-
-    self.setVars = function(event){
-        self.targetPosition = [event.clientX, event.clientY];
-        self.targetXpath = self.getElementXPath(event.toElement);
-        self.targetRelativePosition = [event.offsetX, event.offsetY];
+        return node;
     };
 
-    self.updateNotes = function(notes){
+    self.newEmptyNote = function(){
+        var epoch = (new Date()).valueOf();
+        var node = self.putNote({identifier: self.identifier, 
+                    epoch: epoch, 
+                    isnew: true,
+                    content: "&nbsp;"}
+                );
+
+        $("body").append(node);
+        
+        chrome.extension.sendRequest(
+            {
+                command: "createNote",
+                position: {top: 0, left: 0},
+                epoch: epoch
+            },
+            function(response){
+                if(response.status != "success"){
+                    alert(response.message);
+                }
+            }
+        );
+    };
+
+    self.deleteNote = function(epoch){
+        chrome.extension.sendRequest(
+            {
+                command: "deleteNote",
+                epoch: epoch
+            },
+            function(response){
+                if(response.status != "success"){
+                    alert(response.message);
+                } else {
+                    $(dict_format("#note_{epoch}", {epoch: epoch})).remove();
+                }
+            }
+        );
+    };
+
+    self.displayNotes = function(notes){
+        var l = [];
+        
         $(".note_" + self.identifier).remove();
         self.notes = notes;
-        $(self.notes).each(function(idx, note){
-            var relItem = $.xpath(note.relativeposition.xpath);
-            var relPos = note.relativeposition.position;
-            
-            if (!relItem){
-                return;
+
+        $(self.notes).each(
+            function(idx, note){
+                // relitem.pos + relpos = pos
+                l.push(self.putNote(note));
             }
-            
-            var rpos = relItem.position();
-            $("body").append(
-                $("<div class='note_" + self.identifier +"' id='note_"+ note.epoch +"'>"
-                    + "<img  style='box-shadow: 0 0 10px gray;' src='"+ chrome.extension.getURL("note.png") + "'>"
-                    + "<span style='display: none;'>"+ note.content +"</span>"
-                +"</div>").css({
-                    position: "absolute",
-                    display: "inline-block",
-                    maxWidth: "200px",
-                    height: "auto",
-                    overflow: "hidden",
-                    top: rpos.top + relPos[1],
-                    left: rpos.left + relPos[0]
-                }).hover(function(){
-                    $(this).find("span").show().css({backgroundColor: "rgba(255,224,0, 0.8)"});
-                }, function(){
-                    $(this).find("span").hide();
-                })
-            );
-        });
+        );
+        $("body").append(l);
     };
 
 
-    // from firebug 
+    //{{{ from firebug 
     self.getElementTreeXPath = function(element)
     {
         var paths = [];
@@ -135,73 +281,71 @@ var NotesMaster = new function() {
         else
             return self.getElementTreeXPath(element);
     };
-
-
-    self.openNoteEditor = function(content){
-        $("body").append(
-                    self.layout.css({
-                        height: "100%",
-                        width: "100%",
-                        position: "fixed",
-                        top: 0,
-                        left: 0,
-                        backgroundColor: "rgba(44,44,44,0.2)"
-                        })
-        ).append(
-            self.noteEditor.css(
-            {
-                position: "fixed",
-                top: "100px",
-                left: "100px",
-                height: "200px",
-                width: "400px"
-
-            })
-        );
-    };
-
-    self.saveNote = function(){
-        // aktif not içeriği
-        chrome.extension.sendRequest(
-            {
-                command: "createNote",
-                content: $("#noteEditor_" + self.identifier + " textarea").val(),
-                position: self.targetPosition,
-                relativeposition: {xpath: self.targetXpath, 
-                                    position: self.targetRelativePosition}
-            },
-            function(response){
-                console.log("response to saveNotes", response);
-            }
-        );
-        
-    };
-
-    self.closeEditor = function(){
-        $("body").find(
-            "#noteEditor_" + self.identifier +", #noteEditorLayout_" + self.identifier).remove();
-    };
+    // }}}
 
 }();
 
 
-
-
-$(document).mousedown(function(event){
-    if (event.button == 2){
-        NotesMaster.setVars(event);
-    } 
-});
-
 chrome.extension.onRequest.addListener(function(request, sender, sendResponse) {
-    if (request.command == 'openNoteEditor'){
-        return NotesMaster.openNoteEditor("");
+    if (request.command == 'newEmptyNote'){
+        return NoteMaster.newEmptyNote("");
     }
 });
+
+$(dict_format("<style type='text/css' id='notesStyle_{identifier}'></style>", {identifier: NoteMaster.identifier}))
+        .text(dict_format(CSS, {identifier: NoteMaster.identifier}))
+        .appendTo("head");
+
+NoteMaster.maxZ = Math.max.apply(null, 
+        $.map($('body > *'), function(e,n) {
+            if ($(e).css('position') != 'static')
+                return parseInt($(e).css('z-index')) || 1;
+        })
+);
+
+
+
+$(dict_format(".note_{identifier} span", {identifier: NoteMaster.identifier}))
+    .live("click", function(event){
+        var id = $(this).parents(dict_format(".note_{identifier}", {identifier: NoteMaster.identifier}))
+                    .attr("id").replace(/note_/, "");
+        if(confirm("Note will be deleted permanently, are you sure?")){
+            NoteMaster.deleteNote(id);
+        }
+    });
+
+$(dict_format(".note_{identifier} .note_editable", {identifier: NoteMaster.identifier}))
+    .live("blur", 
+        function(event){
+            event.target.designMode = "off";
+
+        })
+    .live("focus", function(event){
+        var parent = $(event.target)
+            .parents(dict_format("div.note_{identifier}",{identifier: NoteMaster.identifier}))[0];
+
+        $(dict_format("div.note_{identifier}",{identifier: NoteMaster.identifier}))
+            .each(function(idx, item){
+                if(item != parent){
+                    $(item).css("zIndex", NoteMaster.maxZ);
+                } else {
+                    $(item).css("zIndex", NoteMaster.maxZ + 1);
+                }
+            });
+
+        event.target.designMode = "on";
+        $(event.target).keydown(function(ev){
+            if (ev.keyCode == 13){
+            }
+        });
+    });
+
 
 chrome.extension.sendRequest(
     {command: "getNotes"},
     function(response){
-        NotesMaster.updateNotes(response.notes);
+        if(response.notes.length){
+            NoteMaster.displayNotes(response.notes);
+        }
     }
 );
