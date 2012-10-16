@@ -50,6 +50,10 @@ var CSS = dict_format(""
     +   'float: none !important;\n'
     + '}'
 
+    + 'div.note_{identifier} .note_header {\n'
+    +   'cursor: move !important;\n'
+    + '}'
+
     + 'div.note_editable {\n'
     +   'border-bottom-left-radius: 4px !important;\n'
     +   'border-bottom-right-radius: 4px !important;\n'
@@ -109,6 +113,26 @@ var CSS = dict_format(""
 })(jQuery);
 
 // }}}
+// {{{ date getmonth http://stackoverflow.com/a/1643506/37491
+Date.prototype.monthNames = [
+    "January", "February", "March",
+    "April", "May", "June",
+    "July", "August", "September",
+    "October", "November", "December"
+];
+
+Date.prototype.getMonthName = function() {
+    return this.monthNames[this.getMonth()];
+};
+Date.prototype.getShortMonthName = function () {
+    return this.getMonthName().substr(0, 3);
+};
+
+function pad(n) {
+    return (n < 10 ? '0' : '') + n;
+}
+
+//}}}
 
 var NoteMaster = new function() {
     var self = this;
@@ -116,7 +140,24 @@ var NoteMaster = new function() {
     self.placeholdertext = "Click to edit";
     self.notes = [];
     self.identifier = (new Date()).valueOf();
-    self.maxZ = null;
+    self.maxZ = Math.max.apply(null, 
+        $.map($('body > *'), function(e,n) {
+            //if ($(e).css('position') != 'static'){
+                return parseInt($(e).css('zIndex')) || 1;
+             //   }
+        })
+    );
+
+    self.toFront = function(target){
+        $(dict_format("div.note_{identifier}",{identifier: self.identifier}))
+            .each(function(idx, item){
+                if(item != target){
+                    $(item).css("zIndex", self.maxZ);
+                } else {
+                    $(item).css("zIndex", self.maxZ + 1);
+                }
+            });
+    };
 
     self.putNote = function(note){
         var date = new Date(note.epoch);
@@ -135,7 +176,9 @@ var NoteMaster = new function() {
             + "</div>", 
                 {identifier: self.identifier, 
                 epoch: note.epoch, 
-                date: dict_format("{day} / {month} / {year}", {day: date.getDay(), month: date.getMonth(), year: date.getFullYear()}),
+                date: dict_format("{month} {day}, {year} {hour}:{minute}:{second}", 
+                        {day: pad(date.getDay()), month: date.getShortMonthName(), year: date.getFullYear(), 
+                        hour: pad(date.getHours()), minute: pad(date.getMinutes()), second: pad(date.getSeconds())}),
                 content: note.content 
                 }
             ))
@@ -296,12 +339,6 @@ $(dict_format("<style type='text/css' id='notesStyle_{identifier}'></style>", {i
         .text(dict_format(CSS, {identifier: NoteMaster.identifier}))
         .appendTo("head");
 
-NoteMaster.maxZ = Math.max.apply(null, 
-        $.map($('body > *'), function(e,n) {
-            if ($(e).css('position') != 'static')
-                return parseInt($(e).css('z-index')) || 1;
-        })
-);
 
 
 
@@ -318,20 +355,12 @@ $(dict_format(".note_{identifier} .note_editable", {identifier: NoteMaster.ident
     .live("blur", 
         function(event){
             event.target.designMode = "off";
-
         })
     .live("focus", function(event){
-        var parent = $(event.target)
-            .parents(dict_format("div.note_{identifier}",{identifier: NoteMaster.identifier}))[0];
+        NoteMaster.toFront($(event.target)
+            .parents(dict_format("div.note_{identifier}",{identifier: self.identifier}))
+            .get(0));
 
-        $(dict_format("div.note_{identifier}",{identifier: NoteMaster.identifier}))
-            .each(function(idx, item){
-                if(item != parent){
-                    $(item).css("zIndex", NoteMaster.maxZ);
-                } else {
-                    $(item).css("zIndex", NoteMaster.maxZ + 1);
-                }
-            });
 
         event.target.designMode = "on";
         $(event.target).keydown(function(ev){

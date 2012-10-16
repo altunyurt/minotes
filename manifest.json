@@ -1,5 +1,5 @@
 {
-    "name": "xnotes",
+    "name": "minotes",
     "version": "0.1",
     "manifest_version": 2,
 
@@ -9,17 +9,16 @@
     },
     "browser_action": {
         "default_icon": "note32.png",
-        "default_title": "my notes"
+        "default_title": "minotes"
     },
 
     "content_scripts": [{
         "matches": ["http://*/*","https://*/*", "file://*"],
         "js": ["js/jquery-1.8.2.min.js", "js/jquery-ui-1.9.0.custom.min.js", "js/notes.js"],
-        "all_frames": true,
-        "run_at": "document_end"
+        "run_at": "document_idle"
     }],
     "web_accessible_resources": [ "note*.png" ],
-    "permissions": ["tabs", "contextMenus"] 
+    "permissions": ["tabs"] 
 }
 
 // icon
